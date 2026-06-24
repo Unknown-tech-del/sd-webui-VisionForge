@@ -111,55 +111,56 @@ SLIDER_KEYS = [
     "grain_power", "grain_scale", "rolloff", "lift"
 ]
 
-# File path to persist custom presets
-PRESETS_FILE = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), "presets.json")
+# Directory path to persist custom presets
+PRESETS_DIR = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), "presets")
+os.makedirs(PRESETS_DIR, exist_ok=True)
+
+def sanitize_filename(name):
+    """Sanitize the preset name to be a safe cross-platform filename."""
+    return "".join(c for c in name if c.isalnum() or c in (' ', '-', '_')).strip()
 
 def load_presets():
-    """Load both default read-only and custom user-saved presets from JSON."""
+    """Load default presets and individual custom JSON files from the presets/ directory."""
     all_presets = dict(PRESETS)
-    if os.path.exists(PRESETS_FILE):
+    if os.path.exists(PRESETS_DIR):
         try:
-            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
-                custom = json.load(f)
-                all_presets.update(custom)
+            for filename in os.listdir(PRESETS_DIR):
+                if filename.endswith(".json"):
+                    path = os.path.join(PRESETS_DIR, filename)
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            preset_data = json.load(f)
+                            preset_name = filename[:-5]
+                            all_presets[preset_name] = preset_data
+                    except Exception as e:
+                        print(f"VisionForge Error: Failed to read preset file {filename}: {e}")
         except Exception as e:
-            print(f"VisionForge Error: Failed to read presets.json: {e}")
+            print(f"VisionForge Error: Failed to list presets directory: {e}")
     return all_presets
 
 def save_preset_to_json(name, values_dict):
-    """Write custom preset values dictionary back to local JSON configuration."""
-    custom = {}
-    if os.path.exists(PRESETS_FILE):
-        try:
-            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
-                custom = json.load(f)
-        except Exception:
-            pass
-    custom[name] = values_dict
+    """Write custom preset values dictionary to individual JSON file in presets/ directory."""
+    filename = sanitize_filename(name)
+    if not filename:
+        return
+    path = os.path.join(PRESETS_DIR, f"{filename}.json")
     try:
-        with open(PRESETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(custom, f, indent=4)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(values_dict, f, indent=4)
     except Exception as e:
-        print(f"VisionForge Error: Failed to write presets.json: {e}")
+        print(f"VisionForge Error: Failed to write preset file {filename}.json: {e}")
 
 def delete_preset_from_json(name):
-    """Delete a custom preset key from configuration file."""
+    """Delete the individual custom JSON file from presets/ directory."""
     if name in PRESETS:
-        return # Cannot delete default presets
-    custom = {}
-    if os.path.exists(PRESETS_FILE):
+        return
+    filename = sanitize_filename(name)
+    path = os.path.join(PRESETS_DIR, f"{filename}.json")
+    if os.path.exists(path):
         try:
-            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
-                custom = json.load(f)
-        except Exception:
-            pass
-    if name in custom:
-        del custom[name]
-    try:
-        with open(PRESETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(custom, f, indent=4)
-    except Exception as e:
-        print(f"VisionForge Error: Failed to update presets.json during deletion: {e}")
+            os.remove(path)
+        except Exception as e:
+            print(f"VisionForge Error: Failed to delete preset file {filename}.json: {e}")
 
 # Hex to RGB color helper
 def hex_to_rgb(hex_str):
