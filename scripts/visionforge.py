@@ -400,19 +400,30 @@ class Script(scripts.Script):
         all_presets = load_presets()
         
         with gr.Accordion("VisionForge Post-Processing 📷", open=False):
-            with gr.Row():
-                enabled = gr.Checkbox(label="Enable VisionForge", value=False)
-                preset = gr.Dropdown(
-                    label="Artistic Preset",
-                    choices=list(all_presets.keys()),
-                    value="S-Tier Cinematic"
-                )
+            enabled = gr.Checkbox(label="Enable VisionForge", value=False)
             
-            # --- Save & Delete Presets Panel ---
-            with gr.Row():
-                new_preset_name = gr.Textbox(label="Save Current Slider Values as Preset", placeholder="Enter unique name...")
-                btn_save_preset = gr.Button("Save Preset 💾", scale=1)
-                btn_delete_preset = gr.Button("Delete Selected Preset 🗑️", scale=1)
+            # --- Custom Styled Presets Accordion Block (Matches reference image) ---
+            with gr.Accordion("Presets", open=True):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        preset = gr.Dropdown(
+                            label="Presets",
+                            choices=list(all_presets.keys()),
+                            value="S-Tier Cinematic"
+                        )
+                        new_preset_name = gr.Textbox(
+                            label="Preset Name",
+                            placeholder="Enter name to save..."
+                        )
+                    with gr.Column(scale=2):
+                        btn_apply_preset = gr.Button(
+                            "Apply Presets",
+                            elem_id="visionforge_apply_preset_btn"
+                        )
+                        btn_save_preset = gr.Button(
+                            "Save to Presets",
+                            elem_id="visionforge_save_preset_btn"
+                        )
                 
             # Accordion 1: Denoise & Sharpen
             with gr.Accordion("Denoise & Sharpen", open=False):
@@ -545,13 +556,14 @@ class Script(scripts.Script):
                 p["grain_power"], p["grain_scale"], p["rolloff"], p["lift"]
             ]
 
-        preset.change(
+        # Apply Presets button applies the preset configurations to all sliders
+        btn_apply_preset.click(
             fn=update_presets,
             inputs=[preset],
             outputs=slider_outputs
         )
 
-        # Custom Presets: Save Preset Callback
+        # Custom Presets: Save to Presets Callback
         def on_save_click(name, *values):
             if not name or name.strip() == "":
                 return gr.update()
@@ -570,20 +582,6 @@ class Script(scripts.Script):
         btn_save_preset.click(
             fn=on_save_click,
             inputs=[new_preset_name] + slider_outputs,
-            outputs=[preset]
-        )
-
-        # Custom Presets: Delete Preset Callback
-        def on_delete_click(name):
-            if name in PRESETS:
-                return gr.update() # Cannot delete defaults
-            delete_preset_from_json(name)
-            current_presets = load_presets()
-            return gr.update(choices=list(current_presets.keys()), value="S-Tier Cinematic")
-
-        btn_delete_preset.click(
-            fn=on_delete_click,
-            inputs=[preset],
             outputs=[preset]
         )
 

@@ -1,0 +1,33 @@
+/* VisionForge Style Sheet for Native WebUI/Forge Extension UI styling */
+
+#visionforge_apply_preset_btn, 
+#visionforge_save_preset_btn {
+    background-color: #f2711c !important; /* Bright orange theme color */
+    background: #f2711c !important;
+    color: #ffffff !important;
+    border: none !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    border-radius: 4px !important;
+    height: 48px !important;
+    line-height: 48px !important;
+    padding: 0 16px !important;
+    text-align: center !important;
+    margin-top: 14px !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+#visionforge_apply_preset_btn:hover, 
+#visionforge_save_preset_btn:hover {
+    background-color: #e0600d !important;
+    background: #e0600d !important;
+    box-shadow: 0 4px 10px rgba(242, 113, 28, 0.3) !important;
+    cursor: pointer !important;
+}
+
+#visionforge_apply_preset_btn:active, 
+#visionforge_save_preset_btn:active {
+    background-color: #b54a05 !important;
+    background: #b54a05 !important;
+}
