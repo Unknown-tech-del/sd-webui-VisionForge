@@ -40,7 +40,30 @@ def test_pipeline():
     p = MockProcessing()
     pp = MockPostprocessImage(pil_img)
     
-    # 3. Instantiate the Script extension class
+    # 3. Verify Preset Load / Save / Delete functions
+    print("Verifying Preset JSON configuration loading, saving, and deletion...")
+    presets = visionforge.load_presets()
+    assert "S-Tier Cinematic" in presets
+    print(f"Initially loaded presets: {list(presets.keys())}")
+    
+    # Save a mock preset
+    test_preset_name = "Automated Test Preset"
+    test_preset_vals = dict(presets["S-Tier Cinematic"])
+    test_preset_vals["exposure"] = 1.00
+    
+    visionforge.save_preset_to_json(test_preset_name, test_preset_vals)
+    presets_after_save = visionforge.load_presets()
+    assert test_preset_name in presets_after_save
+    assert presets_after_save[test_preset_name]["exposure"] == 1.00
+    print(f"Saved custom preset successfully: '{test_preset_name}'")
+    
+    # Delete the mock preset
+    visionforge.delete_preset_from_json(test_preset_name)
+    presets_after_delete = visionforge.load_presets()
+    assert test_preset_name not in presets_after_delete
+    print("Deleted custom preset successfully.")
+    
+    # 4. Instantiate the Script extension class
     print("Instantiating Script extension...")
     script = visionforge.Script()
     

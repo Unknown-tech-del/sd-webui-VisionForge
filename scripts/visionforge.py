@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import cv2
 import numpy as np
@@ -24,7 +25,7 @@ except ImportError:
     StableDiffusionProcessing = MockProcessing
     IS_WEBUI = False
 
-# Preset values dictionary for front-end synchronization
+# Preset values dictionary for front-end synchronization (Default read-only presets)
 PRESETS = {
     "S-Tier Cinematic": {
         "denoise_enabled": True, "denoise_sigma": 2.5, "denoise_threshold": 0.06,
@@ -96,6 +97,70 @@ PRESETS = {
     }
 }
 
+# Mapping order of all slider configuration keys
+SLIDER_KEYS = [
+    "denoise_enabled", "denoise_sigma", "denoise_threshold",
+    "sharpen_enabled", "sharpen_amount",
+    "glow_small", "glow_diffuse", "bloom_intensity", "bloom_threshold", "bloom_smoothing", "bloom_saturation",
+    "clarity_enabled", "clarity_strength", "exposure", "gamma", "contrast", "brightness", "saturation", "hue", "temperature", "tint",
+    "rgb_r", "rgb_g", "rgb_b",
+    "colormatch_enabled", "colormatch_strength",
+    "depth_mode", "dof_enabled", "dof_focus", "dof_fstop", "dof_intensity",
+    "haze_enabled", "haze_color", "haze_strength", "haze_offset",
+    "ca_amount", "vignette_intensity", "vignette_feather", "vignette_zoom", "vignette_color",
+    "grain_power", "grain_scale", "rolloff", "lift"
+]
+
+# File path to persist custom presets
+PRESETS_FILE = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), "presets.json")
+
+def load_presets():
+    """Load both default read-only and custom user-saved presets from JSON."""
+    all_presets = dict(PRESETS)
+    if os.path.exists(PRESETS_FILE):
+        try:
+            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+                all_presets.update(custom)
+        except Exception as e:
+            print(f"VisionForge Error: Failed to read presets.json: {e}")
+    return all_presets
+
+def save_preset_to_json(name, values_dict):
+    """Write custom preset values dictionary back to local JSON configuration."""
+    custom = {}
+    if os.path.exists(PRESETS_FILE):
+        try:
+            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+        except Exception:
+            pass
+    custom[name] = values_dict
+    try:
+        with open(PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(custom, f, indent=4)
+    except Exception as e:
+        print(f"VisionForge Error: Failed to write presets.json: {e}")
+
+def delete_preset_from_json(name):
+    """Delete a custom preset key from configuration file."""
+    if name in PRESETS:
+        return # Cannot delete default presets
+    custom = {}
+    if os.path.exists(PRESETS_FILE):
+        try:
+            with open(PRESETS_FILE, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+        except Exception:
+            pass
+    if name in custom:
+        del custom[name]
+    try:
+        with open(PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(custom, f, indent=4)
+    except Exception as e:
+        print(f"VisionForge Error: Failed to update presets.json during deletion: {e}")
+
 # Hex to RGB color helper
 def hex_to_rgb(hex_str):
     hex_str = hex_str.lstrip('#')
@@ -110,7 +175,6 @@ def hex_to_rgb(hex_str):
 def clarity_fx(img, strength):
     if strength <= 0.0:
         return img
-    # large scale unsharp mask
     blurred = cv2.GaussianBlur(img, (0, 0), 12.0)
     high_freq = np.clip(img - blurred + 0.5, 0.0, 1.0)
     
@@ -123,7 +187,6 @@ def clarity_fx(img, strength):
     return (1.0 - strength) * img + strength * blended
 
 def color_match(src, ref, strength):
-    # Convert both to LAB space
     src_lab = cv2.cvtColor(src, cv2.COLOR_RGB2LAB).astype(np.float32)
     ref_lab = cv2.cvtColor(ref, cv2.COLOR_RGB2LAB).astype(np.float32)
     
@@ -158,7 +221,6 @@ def apply_bloom_glow(img, small_glow, diffuse_glow, bloom_intensity, threshold, 
     h, w = img.shape[:2]
     bright_down = cv2.resize(bright, (w//2, h//2))
     
-    # Blur passes (Gaussian)
     glow_small = cv2.GaussianBlur(bright_down, (0, 0), 3.0)
     glow_diffuse = cv2.GaussianBlur(bright_down, (0, 0), 14.0)
     bloom = cv2.GaussianBlur(bright_down, (0, 0), 8.0)
@@ -178,28 +240,23 @@ def apply_bloom_glow(img, small_glow, diffuse_glow, bloom_intensity, threshold, 
 def color_grade(img, exposure, gamma, contrast, brightness, saturation, hue, temp, tint, rgb_adj):
     img = img * (2.0 ** exposure)
     
-    # RGB bias offsets
     img[:,:,0] += rgb_adj[0] / 255.0
     img[:,:,1] += rgb_adj[1] / 255.0
     img[:,:,2] += rgb_adj[2] / 255.0
     
-    # Color Temperature / Tint shift
-    img[:,:,0] += temp * 0.12 # Red warmer
-    img[:,:,2] -= temp * 0.12 # Blue cooler
-    img[:,:,1] += tint * 0.08 # Green tint
+    img[:,:,0] += temp * 0.12 
+    img[:,:,2] -= temp * 0.12 
+    img[:,:,1] += tint * 0.08 
     img[:,:,0] -= tint * 0.04
     img[:,:,2] -= tint * 0.04
     img = np.clip(img, 0.0, 1.0)
     
-    # Contrast relative to 0.5
     img = (img - 0.5) * contrast + 0.5
     img = np.clip(img, 0.0, 1.0)
     
-    # Brightness offset
     img += brightness
     img = np.clip(img, 0.0, 1.0)
     
-    # Hue and Saturation
     if saturation != 1.0 or hue != 0.0:
         hsv = cv2.cvtColor((img * 255.0).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
         hsv[:,:,0] = (hsv[:,:,0] + hue / 2.0) % 180.0
@@ -207,7 +264,6 @@ def color_grade(img, exposure, gamma, contrast, brightness, saturation, hue, tem
         hsv[:,:,1] = np.clip(hsv[:,:,1], 0.0, 255.0)
         img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32) / 255.0
         
-    # Gamma Correction
     if gamma != 1.0:
         img = np.power(img, 1.0 / gamma)
         img = np.clip(img, 0.0, 1.0)
@@ -217,7 +273,6 @@ def color_grade(img, exposure, gamma, contrast, brightness, saturation, hue, tem
 def apply_dof_haze(img, depth, dof_enabled, focus_point, fstop, dof_intensity, haze_enabled, haze_color_hex, haze_strength, haze_offset):
     h, w = img.shape[:2]
     
-    # 1. Atmospheric Haze Fog
     if haze_enabled and haze_strength > 0.0:
         haze_factor = np.clip((depth - haze_offset) / (1.0 - haze_offset + 1e-5), 0.0, 1.0)
         haze_factor = np.power(haze_factor, 1.5) * haze_strength
@@ -226,17 +281,14 @@ def apply_dof_haze(img, depth, dof_enabled, focus_point, fstop, dof_intensity, h
         color_rgb = np.array(hex_to_rgb(haze_color_hex), dtype=np.float32) / 255.0
         img = img * (1.0 - haze_factor) + color_rgb * haze_factor
         
-    # 2. Depth of Field Blur (bokeh simulator)
     if dof_enabled and dof_intensity > 0.0:
         coc = np.abs(depth - focus_point)
         coc = coc / (fstop + 1e-5)
-        # smoothstep
         coc = np.clip(coc, 0.0, 1.0)
         coc = coc * coc * (3.0 - 2.0 * coc)
         
         blur_radius = coc * dof_intensity
         
-        # Separable interpolation blur to avoid heavy loops
         blur_2 = cv2.GaussianBlur(img, (0, 0), 2.0)
         blur_5 = cv2.GaussianBlur(img, (0, 0), 5.0)
         blur_11 = cv2.GaussianBlur(img, (0, 0), 11.0)
@@ -248,7 +300,6 @@ def apply_dof_haze(img, depth, dof_enabled, focus_point, fstop, dof_intensity, h
         mask_2 = (blur_radius > 5.0) & (blur_radius <= 11.0)
         mask_3 = blur_radius > 11.0
         
-        # LERP blends
         t = (blur_radius / 2.0)[:, :, np.newaxis]
         out = np.where(mask_0[:, :, np.newaxis], img * (1.0 - t) + blur_2 * t, out)
         
@@ -266,7 +317,6 @@ def apply_dof_haze(img, depth, dof_enabled, focus_point, fstop, dof_intensity, h
 def apply_lens_fx(img, ca_amount, vignette_intensity, vignette_feather, vignette_zoom, vignette_color_hex, grain_power, grain_scale, highlight_rolloff, lift_blacks, seed):
     h, w = img.shape[:2]
     
-    # 1. Chromatic Aberration Radial Channel Shift
     if ca_amount > 0.0:
         y, x = np.mgrid[0:h, 0:w]
         cx, cy = w / 2.0, h / 2.0
@@ -284,18 +334,15 @@ def apply_lens_fx(img, ca_amount, vignette_intensity, vignette_feather, vignette
         b = cv2.remap(img[:,:,2], map_x_b, map_y_b, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
         img = np.stack([r, g, b], axis=-1)
         
-    # 2. Highlight Rolloff
     if highlight_rolloff > 0.0:
         img = img / (1.0 + img * highlight_rolloff)
         
-    # 3. Lift Blacks in Shadows
     if abs(lift_blacks) > 0.0:
         luma = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
         shadow_weight = np.power(1.0 - luma, 2.0)[:, :, np.newaxis]
         img += (1.0 - img) * lift_blacks * shadow_weight
         img = np.clip(img, 0.0, 1.0)
         
-    # 4. Vignette Layer
     if vignette_intensity > 0.0:
         y, x = np.mgrid[0:h, 0:w]
         dx = (x - w/2.0) / (w/2.0)
@@ -310,7 +357,6 @@ def apply_lens_fx(img, ca_amount, vignette_intensity, vignette_feather, vignette
         color_rgb = np.array(hex_to_rgb(vignette_color_hex), dtype=np.float32) / 255.0
         img = img * (1.0 - vignette_mask) + color_rgb * vignette_mask
         
-    # 5. Procedural Film Grain (noise mapping)
     if grain_power > 0.0:
         np.random.seed(int(seed))
         gh, gw = int(h / max(grain_scale, 0.5)), int(w / max(grain_scale, 0.5))
@@ -320,6 +366,24 @@ def apply_lens_fx(img, ca_amount, vignette_intensity, vignette_feather, vignette
         img = np.clip(img, 0.0, 1.0)
         
     return img
+
+def cas_sharpen(img, amount):
+    kernel = np.array([
+        [0, -1, 0],
+        [-1, 4, -1],
+        [0, -1, 0]
+    ], dtype=np.float32)
+    laplacian = cv2.filter2D(img, -1, kernel)
+    
+    gray = cv2.cvtColor((img * 255.0).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+    local_max = cv2.dilate(gray, np.ones((3, 3)))
+    local_min = cv2.erode(gray, np.ones((3, 3)))
+    edge_contrast = local_max - local_min
+    
+    weight = amount * (1.0 - edge_contrast)
+    weight = np.clip(weight, 0.0, 1.0)[:, :, np.newaxis]
+    
+    return np.clip(img - laplacian * (0.25 * weight), 0.0, 1.0)
 
 # -------------------------------------------------------------------------
 # Main Gradio UI Integration Script
@@ -333,14 +397,22 @@ class Script(scripts.Script):
         return scripts.AlwaysVisible
 
     def ui(self, is_img2img):
+        all_presets = load_presets()
+        
         with gr.Accordion("VisionForge Post-Processing 📷", open=False):
             with gr.Row():
                 enabled = gr.Checkbox(label="Enable VisionForge", value=False)
                 preset = gr.Dropdown(
                     label="Artistic Preset",
-                    choices=list(PRESETS.keys()),
+                    choices=list(all_presets.keys()),
                     value="S-Tier Cinematic"
                 )
+            
+            # --- Save & Delete Presets Panel ---
+            with gr.Row():
+                new_preset_name = gr.Textbox(label="Save Current Slider Values as Preset", placeholder="Enter unique name...")
+                btn_save_preset = gr.Button("Save Preset 💾", scale=1)
+                btn_delete_preset = gr.Button("Delete Selected Preset 🗑️", scale=1)
                 
             # Accordion 1: Denoise & Sharpen
             with gr.Accordion("Denoise & Sharpen", open=False):
@@ -443,7 +515,7 @@ class Script(scripts.Script):
             outputs=[custom_depth_image]
         )
 
-        # Preset selection change handler updates all slider values dynamically
+        # List of outputs to synchronize when loading a preset
         slider_outputs = [
             denoise_enabled, denoise_sigma, denoise_threshold,
             sharpen_enabled, sharpen_amount,
@@ -458,7 +530,8 @@ class Script(scripts.Script):
         ]
 
         def update_presets(preset_name):
-            p = PRESETS[preset_name]
+            current_presets = load_presets()
+            p = current_presets.get(preset_name, PRESETS["S-Tier Cinematic"])
             return [
                 p["denoise_enabled"], p["denoise_sigma"], p["denoise_threshold"],
                 p["sharpen_enabled"], p["sharpen_amount"],
@@ -476,6 +549,42 @@ class Script(scripts.Script):
             fn=update_presets,
             inputs=[preset],
             outputs=slider_outputs
+        )
+
+        # Custom Presets: Save Preset Callback
+        def on_save_click(name, *values):
+            if not name or name.strip() == "":
+                return gr.update()
+            name = name.strip()
+            if name in PRESETS:
+                return gr.update() # Prevent overwriting built-in templates
+                
+            values_dict = {}
+            for k, val in zip(SLIDER_KEYS, values):
+                values_dict[k] = val
+                
+            save_preset_to_json(name, values_dict)
+            current_presets = load_presets()
+            return gr.update(choices=list(current_presets.keys()), value=name)
+
+        btn_save_preset.click(
+            fn=on_save_click,
+            inputs=[new_preset_name] + slider_outputs,
+            outputs=[preset]
+        )
+
+        # Custom Presets: Delete Preset Callback
+        def on_delete_click(name):
+            if name in PRESETS:
+                return gr.update() # Cannot delete defaults
+            delete_preset_from_json(name)
+            current_presets = load_presets()
+            return gr.update(choices=list(current_presets.keys()), value="S-Tier Cinematic")
+
+        btn_delete_preset.click(
+            fn=on_delete_click,
+            inputs=[preset],
+            outputs=[preset]
         )
 
         # Return UI variables to process positionally in postprocess_image
@@ -512,17 +621,13 @@ class Script(scripts.Script):
         if not enabled:
             return
 
-        # Load input PIL image from postprocessing pipeline
         pil_img = pp.image
         img_np = np.array(pil_img)
         
-        # Convert RGB to BGR for OpenCV
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         h, w = img_cv.shape[:2]
         
-        # 1. Bilateral Denoise (uint8)
         if denoise_enabled:
-            # OpenCV Bilateral Filter on BGR
             img_cv = cv2.bilateralFilter(
                 img_cv,
                 d=-1,
@@ -530,45 +635,34 @@ class Script(scripts.Script):
                 sigmaSpace=denoise_sigma
             )
 
-        # Convert image to Float32 RGB for high precision filtering [0, 1]
         img = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         
-        # 2. Reinhard Color Transfer
         if colormatch_enabled and colormatch_image is not None:
             try:
-                # Convert Gradio PIL reference image to numpy
                 ref_np = np.array(colormatch_image)
-                # Ensure 3-channel RGB
                 if len(ref_np.shape) == 3 and ref_np.shape[2] == 3:
-                    # Reinhard color matching expects uint8 inputs
                     src_uint8 = (img * 255.0).astype(np.uint8)
                     matched_uint8 = color_match(src_uint8, ref_np, colormatch_strength)
                     img = matched_uint8.astype(np.float32) / 255.0
             except Exception as e:
                 print(f"VisionForge Error: Reinhard Color Match failed: {e}")
 
-        # 3. CAS Sharpening
         if sharpen_enabled and sharpen_amount > 0.0:
             img = cas_sharpen(img, sharpen_amount)
 
-        # 4. Clarity FX (Hard Light blur subtract overlay)
         if clarity_enabled and clarity_strength > 0.0:
             img = clarity_fx(img, clarity_strength)
 
-        # 5. Color Grading (Exposure, Gamma, Contrast, Brightness, Saturation, Temp, Tint, RGB)
         img = color_grade(
             img, exposure, gamma, contrast, brightness, saturation, hue,
             temperature, tint, [rgb_r, rgb_g, rgb_b]
         )
 
-        # 6. Bloom & Glow Overlay (Additive)
         img = apply_bloom_glow(
             img, glow_small, glow_diffuse, bloom_intensity,
             bloom_threshold, bloom_smoothing, bloom_saturation
         )
 
-        # 7. Generate or Extract Depth Map
-        # 0.0 = close (white in default depth map but inverted for distances), 1.0 = far
         depth = np.zeros((h, w), dtype=np.float32)
         
         if depth_mode == "Custom Upload" and custom_depth_image is not None:
@@ -577,10 +671,9 @@ class Script(scripts.Script):
                 depth = cv2.resize(custom_depth_np, (w, h)).astype(np.float32) / 255.0
             except Exception as e:
                 print(f"VisionForge Error: Custom Depth loading failed: {e}")
-                depth_mode = "Radial Subject Focus" # fallback
+                depth_mode = "Radial Subject Focus"
                 
         if depth_mode == "Radial Subject Focus":
-            # Radial centered subject depth
             cx, cy = w / 2.0, h * 0.35
             max_rad = max(w, h) * 0.8
             y, x = np.mgrid[0:h, 0:w]
@@ -588,47 +681,19 @@ class Script(scripts.Script):
             depth = np.clip(dist / max_rad, 0.0, 1.0)
             
         elif depth_mode == "Linear Landscape Gradient":
-            # Linear bottom-to-top background gradient
             y, x = np.mgrid[0:h, 0:w]
             depth = np.clip(1.0 - (y.astype(np.float32) / h), 0.0, 1.0)
 
-        # 8. Depth of Field (DoF) and Atmospheric Haze
         img = apply_dof_haze(
             img, depth, dof_enabled, dof_focus, dof_fstop, dof_intensity,
             haze_enabled, haze_color, haze_strength, haze_offset
         )
 
-        # 9. Final Lens FX and Finishing (Aberration, vignette, film grain, lifts)
-        # Generate pseudo-random seed for film grain
         final_seed = p.seed if p.seed != -1 else random.randint(0, 100000)
         img = apply_lens_fx(
             img, ca_amount, vignette_intensity, vignette_feather, vignette_zoom,
             vignette_color, grain_power, grain_scale, rolloff, lift, final_seed
         )
 
-        # Convert Float32 image back to Uint8 RGB PIL Image
         out_uint8 = (img * 255.0).clip(0, 255).astype(np.uint8)
         pp.image = Image.fromarray(out_uint8)
-
-
-def cas_sharpen(img, amount):
-    # Cross neighborhood Laplacian kernel
-    kernel = np.array([
-        [0, -1, 0],
-        [-1, 4, -1],
-        [0, -1, 0]
-    ], dtype=np.float32)
-    laplacian = cv2.filter2D(img, -1, kernel)
-    
-    # Calculate local edge contrast weight (CAS concept)
-    gray = cv2.cvtColor((img * 255.0).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
-    local_max = cv2.dilate(gray, np.ones((3, 3)))
-    local_min = cv2.erode(gray, np.ones((3, 3)))
-    edge_contrast = local_max - local_min
-    
-    # Contrast weight: Sharpen less on high contrast areas (avoid haloing)
-    weight = amount * (1.0 - edge_contrast)
-    weight = np.clip(weight, 0.0, 1.0)[:, :, np.newaxis]
-    
-    # Apply sharpening
-    return np.clip(img - laplacian * (0.25 * weight), 0.0, 1.0)
